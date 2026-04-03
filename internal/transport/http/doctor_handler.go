@@ -29,7 +29,7 @@ func (h *DoctorHandler) Create(c *gin.Context) {
 	}
 
 	if err := h.usecase.CreateDoctor(c.Request.Context(), &doctor); err != nil {
-		if err == model.ErrInvalidFullName || err == model.ErrInvalidEmail || err == model.ErrEmailExists {
+		if err == model.ErrInvalidFullName || err == model.ErrInvalidEmail || err == model.ErrInvalidEmailFormat || err == model.ErrEmailExists {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}

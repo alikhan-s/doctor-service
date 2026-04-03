@@ -1,7 +1,10 @@
+// internal/usecase/doctor_usecase.go
 package usecase
 
 import (
 	"context"
+	"regexp" // Импортируем пакет для работы с регулярными выражениями
+
 	"github.com/alikhan-s/doctor-s/internal/model"
 	"github.com/alikhan-s/doctor-s/internal/repository"
 )
@@ -26,6 +29,11 @@ func (u *doctorUseCase) CreateDoctor(ctx context.Context, doctor *model.Doctor) 
 	}
 	if doctor.Email == "" {
 		return model.ErrInvalidEmail
+	}
+
+	emailRegex := regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
+	if !emailRegex.MatchString(doctor.Email) {
+		return model.ErrInvalidEmailFormat
 	}
 
 	existingDoc, err := u.repo.GetByEmail(ctx, doctor.Email)
