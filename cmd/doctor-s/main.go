@@ -3,19 +3,20 @@ package main
 import (
 	"context"
 	"log"
-	"net/http"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
 	"github.com/alikhan-s/doctor-s/internal/repository"
-	transport "github.com/alikhan-s/doctor-s/internal/transport/http"
+	transport "github.com/alikhan-s/doctor-s/internal/transport/grpc"
 	"github.com/alikhan-s/doctor-s/internal/usecase"
+	pb "github.com/alikhan-s/doctor-s/proto"
 
-	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"google.golang.org/grpc"
 )
 
 func main() {
@@ -33,32 +34,27 @@ func main() {
 	repo := repository.NewDoctorMongoRepo(db)
 	usecaseLayer := usecase.NewDoctorUseCase(repo)
 
-	router := gin.Default()
-	transport.NewDoctorHandler(router, usecaseLayer)
+	grpcServer := grpc.NewServer()
+	handler := transport.NewDoctorHandler(usecaseLayer)
+	pb.RegisterDoctorServiceServer(grpcServer, handler)
 
-	srv := &http.Server{
-		Addr:    ":8081",
-		Handler: router,
+	listener, err := net.Listen("tcp", ":8081")
+	if err != nil {
+		log.Fatalf("Failed to listen: %v", err)
 	}
 
 	go func() {
-		log.Println("Doctor Service is running on port 8081")
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Listen: %s\n", err)
+		log.Println("Doctor gRPC Service is running on port 8081")
+		if err := grpcServer.Serve(listener); err != nil {
+			log.Fatalf("Failed to serve: %v", err)
 		}
 	}()
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
-	log.Println("Shutting down server...")
+	log.Println("Shutting down Doctor gRPC server...")
 
-	ctxShutdown, cancelShutdown := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancelShutdown()
-
-	if err := srv.Shutdown(ctxShutdown); err != nil {
-		log.Fatal("Server forced to shutdown:", err)
-	}
-
+	grpcServer.GracefulStop()
 	log.Println("Server exiting")
 }
