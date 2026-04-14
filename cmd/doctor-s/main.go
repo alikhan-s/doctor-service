@@ -17,6 +17,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
 )
 
 func main() {
@@ -42,6 +43,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to listen: %v", err)
 	}
+
+	reflection.Register(grpcServer)
 
 	go func() {
 		log.Println("Doctor gRPC Service is running on port 8081")

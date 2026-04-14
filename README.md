@@ -1,85 +1,86 @@
-# Doctor Service API
+# Doctor Service (gRPC Migration) - Medical Scheduling Platform
 
-This is a microservice for managing doctors on the medical platform. It provides a REST API for creating and retrieving doctor records using Clean Architecture. The project is structured in such a way that it can be scaled in the future.
+## 1. Project Overview and Purpose
+The Medical Scheduling Platform is a two-service distributed system designed to manage doctors and patient appointments. Originally built using HTTP/REST, this project has been migrated to use **gRPC** for all inter-service and client-to-server communication.
 
-## Technologies
+The purpose of this migration is to enforce strict service contracts using Protocol Buffers, improve communication performance via HTTP/2, and demonstrate the implementation of Clean Architecture alongside modern RPC frameworks in Go.
 
-* Language: Go 1.25.5
-* Framework: Gin for HTTP routing
-* Database: MongoDB
-* Architecture: Clean Architecture (Model, Repository, Usecase, Transport)
+## 2. Service Responsibilities and Data Ownership
+The system is divided into two bounded contexts:
+* **Doctor Service (This repository):** Owns the `Doctor` domain model. It is responsible for managing doctor profiles (ID, Full Name, Specialization, Email) and ensuring data integrity (e.g., enforcing unique email addresses). It acts purely as a gRPC Server.
+* **Appointment Service:** Owns the `Appointment` domain model. It manages scheduling, status transitions (`new` -> `in_progress` -> `done`), and holds a gRPC Client stub to verify doctor existence by communicating with the Doctor Service.
 
-## How to Run the Project
+## 3. Installation and Stub Regeneration
+To modify the `.proto` contracts and regenerate the Go stubs, you need the Protocol Buffers compiler and Go plugins.
 
-### Requirements
-1. Go installed (version 1.25.5 or higher).
-2. A running MongoDB server on the default port (localhost:27017). The service will automatically create the doctor_db database and the doctors collection.
+**Step 1: Install `protoc`**
+Download the pre-compiled binary for your OS from the [official GitHub releases page](https://github.com/protocolbuffers/protobuf/releases). Extract it and add the `bin` directory to your system's `PATH`.
 
-### Running the service
-In the root directory of the project, run the following command in your terminal:
-```bash
-  go run ./cmd/doctor-s/main.go
-```
-The service will start on port 8081. It also supports Graceful Shutdown to safely close connections when you stop the server.
+**Step 2: Install Go gRPC plugins**
+Run the following commands to install the required Go plugins:
+`go install google.golang.org/protobuf/cmd/protoc-gen-go@latest`
+`go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest`
 
----
+**Step 3: Regenerate Stubs**
+If you modify the `proto/doctor.proto` file, regenerate the `doctor.pb.go` and `doctor_grpc.pb.go` stubs by running this command from the root of the **Doctor Service**:
+`protoc --go_out=. --go_opt=paths=source_relative --go-grpc_out=. --go-grpc_opt=paths=source_relative proto/doctor.proto`
 
-## REST API Endpoints
+## 4. Local Setup and Startup Instructions
+Both services require a running MongoDB instance (default port: `localhost:27017`).
 
-### 1. Create a Doctor
-Adds a new doctor to the database.
+**Startup Order:**
+1.  **Doctor Service (Port 8081):** Start this first so the Appointment Service can establish a connection immediately.
+2.  **Appointment Service (Port 8082):** Start this second.
 
-* URL: /doctors
-* Method: POST
-* Request Body (JSON Example):
-```json
-  {
-      "full_name": "John Doe",
-      "specialization": "Therapist",
-      "email": "johndoe@hospital.com"
-  }
-```
-**Business Rules (Validation):**
-* The full_name field is required.
-* The email field is required and must contain an @ symbol and a valid domain format.
-* The email must be unique across the system.
+**Step-by-step commands:**
+Open two separate terminal windows.
 
-**Responses:**
-* 200 OK: Doctor created successfully. Returns the doctor object with the generated ID.
-* 400 Bad Request: Validation error (missing fields, invalid email format, or email already exists).
-* 500 Internal Server Error: Server or database error.
+*Terminal 1 (Doctor Service):*
+`cd doctor-service`
+`go mod tidy`
+`go run ./cmd/doctor-s/`
 
----
+*Terminal 2 (Appointment Service):*
+`cd appointment-service`
+`go mod tidy`
+`go run ./cmd/appointment-s/`
 
-### 2. Get Doctor by ID
-Retrieves information about a specific doctor using their unique identifier.
+## 5. Proto Contract Description (Doctor Service)
+The Doctor Service defines the following RPCs in its contract to enforce strict business rules:
 
-* URL: /doctors/:id
-* Method: GET
+| RPC | Request Message | Response Message | Enforced Business Rule |
+| :--- | :--- | :--- | :--- |
+| **`CreateDoctor`** | `CreateDoctorRequest` | `DoctorResponse` | Validates that `full_name` and `email` are provided. Ensures the `email` format is valid and strictly unique in the database. Returns `codes.InvalidArgument` or `codes.AlreadyExists` on violation. |
+| **`GetDoctor`** | `GetDoctorRequest` | `DoctorResponse` | Retrieves a doctor by ID. Returns a `codes.NotFound` gRPC status if the ID does not exist in the database. |
+| **`ListDoctors`** | `ListDoctorsRequest` | `ListDoctorsResponse` | Returns an array of all stored doctors. Returns an empty array (not nil) if no doctors exist. |
 
-**Responses:**
-* 200 OK: Successful request. Returns the doctor JSON object.
-* 404 Not Found: Returns an error message ("there is no doctor like this") if the doctor with this ID is not found.
-* 500 Internal Server Error: Server error.
+## 6. Inter-Service Communication
+The system utilizes a synchronous gRPC communication pattern.
+* **When:** The Appointment Service calls the Doctor Service *before* creating a new appointment.
+* **How:** The Appointment Service initializes a `DoctorServiceClient` (generated by protoc) injected through an interface (`DoctorClient`) into its Use Case layer. It invokes the `GetDoctor` RPC over the network.
+* **Error Propagation:** If the Doctor Service returns an error (e.g., `codes.NotFound`), the Appointment Service's client stub captures this gRPC status, maps it to a domain error (`ErrDoctorNotExists`), and passes it up to its own delivery layer to return a `codes.FailedPrecondition` to the end-user.
 
----
+## 7. Failure Scenario & Resilience Patterns
+**What happens if the Doctor Service is unavailable?**
+If the Doctor Service crashes or is unreachable, the Appointment Service's `GetDoctor` RPC call will fail with a connection error. The client stub maps this network failure to the domain error `ErrDoctorServiceDown`. The Appointment Service's gRPC handler then intercepts this domain error and correctly returns a **`codes.Unavailable`** gRPC status to the caller, explicitly detailing that the upstream service is unreachable.
 
-### 3. Get All Doctors
-Returns an array of all doctors registered in the system.
+**Production Resilience Patterns:**
+In a production environment, simply returning an error isn't enough. We would implement:
+1.  **Timeouts:** Applied via `context.WithTimeout` on the client stub to ensure the Appointment Service doesn't hang indefinitely waiting for a dead Doctor Service.
+2.  **Retries:** Utilizing gRPC interceptors to automatically retry the request for transient network glitches before failing.
+3.  **Circuit Breakers:** Implemented in the client layer to stop sending traffic to the Doctor Service entirely if it fails repeatedly, allowing it time to recover and preventing resource exhaustion on the Appointment Service side.
 
-* URL: /doctors
-* Method: GET
+## 8. Trade-off Discussion: REST vs. gRPC
+Choosing between REST and gRPC involves distinct engineering trade-offs:
 
-**Responses:**
-* 200 OK: Successful request. Returns an array of objects. If there are no doctors in the database, it returns an empty array "[]" instead of null.
-* 500 Internal Server Error: Error fetching data.
+1.  **Payload Format & Parsing:**
+    * *REST* relies on JSON, which is human-readable and easy to debug, but text-heavy and slower to serialize/deserialize.
+    * *gRPC* uses Protocol Buffers (binary). It is unreadable without the `.proto` file but is extremely compact and fast to parse, saving significant CPU cycles in high-throughput microservices.
+2.  **Contract Enforcement:**
+    * *REST* contracts (like OpenAPI/Swagger) are often treated as documentation and can easily drift from the actual code implementation.
+    * *gRPC* enforces a strict, single-source-of-truth contract. Code stubs are generated directly from the `.proto` file, guaranteeing type safety and eliminating runtime structural mismatches.
+3.  **Underlying Protocol & Streaming:**
+    * *REST* typically uses HTTP/1.1, suffering from head-of-line blocking and strictly following a unary Request-Response model.
+    * *gRPC* is built on HTTP/2, allowing request multiplexing over a single connection and native support for bi-directional streaming.
 
----
-
-## Project Structure (Clean Architecture)
-
-* `cmd/doctor-s/main.go`: The entry point of the application. Handles DB connection, application layer setup, and server launch.
-* `internal/model`: Defines data structures (Doctor) and common system errors.
-* `internal/repository`: The layer responsible for interacting with the MongoDB database.
-* `internal/usecase`: The business logic layer containing data validation rules, such as email format validation via regular expressions.
-* `internal/transport/http`: Handlers for processing HTTP requests via the Gin framework and managing response status codes.
+**When to choose which?** REST remains the undisputed choice for public-facing APIs or when clients are web browsers, due to universal JSON support. However, **gRPC** is the superior choice for internal, inter-service communication (like our Appointment -> Doctor call) where strict typing, low latency, and high performance are mandatory.
