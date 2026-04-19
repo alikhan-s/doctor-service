@@ -1,12 +1,11 @@
-// internal/usecase/doctor_usecase.go
 package usecase
 
 import (
 	"context"
-	"regexp" // Импортируем пакет для работы с регулярными выражениями
+	"regexp"
 
-	"github.com/alikhan-s/doctor-s/internal/model"
-	"github.com/alikhan-s/doctor-s/internal/repository"
+	"github.com/alikhan-s/doctor-service/internal/model"
+	"github.com/alikhan-s/doctor-service/internal/repository"
 )
 
 type DoctorUseCase interface {

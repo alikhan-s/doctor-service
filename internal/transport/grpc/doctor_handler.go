@@ -3,9 +3,9 @@ package grpc
 import (
 	"context"
 
-	"github.com/alikhan-s/doctor-s/internal/model"
-	"github.com/alikhan-s/doctor-s/internal/usecase"
-	pb "github.com/alikhan-s/doctor-s/proto"
+	"github.com/alikhan-s/doctor-service/internal/model"
+	"github.com/alikhan-s/doctor-service/internal/usecase"
+	pb "github.com/alikhan-s/doctor-service/proto"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

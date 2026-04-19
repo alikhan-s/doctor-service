@@ -9,10 +9,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/alikhan-s/doctor-s/internal/repository"
-	transport "github.com/alikhan-s/doctor-s/internal/transport/grpc"
-	"github.com/alikhan-s/doctor-s/internal/usecase"
-	pb "github.com/alikhan-s/doctor-s/proto"
+	"github.com/alikhan-s/doctor-service/internal/repository"
+	transport "github.com/alikhan-s/doctor-service/internal/transport/grpc"
+	"github.com/alikhan-s/doctor-service/internal/usecase"
+	pb "github.com/alikhan-s/doctor-service/proto"
 
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"

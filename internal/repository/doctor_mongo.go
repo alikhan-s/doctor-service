@@ -3,7 +3,7 @@ package repository
 import (
 	"context"
 
-	"github.com/alikhan-s/doctor-s/internal/model"
+	"github.com/alikhan-s/doctor-service/internal/model"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"

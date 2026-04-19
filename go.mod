@@ -1,4 +1,4 @@
-module github.com/alikhan-s/doctor-s
+module github.com/alikhan-s/doctor-service
 
 go 1.25.5
 
